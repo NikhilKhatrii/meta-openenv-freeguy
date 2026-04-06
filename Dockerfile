@@ -1,6 +1,10 @@
 # Use a lightweight Python image
 FROM python:3.10-slim
 
+# --- Install git as root before switching users ---
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user and set path
 RUN useradd -m -u 1000 user
 USER user
 ENV PATH="/home/user/.local/bin:$PATH"
@@ -12,8 +16,6 @@ WORKDIR /app
 RUN pip install --no-cache-dir fastapi uvicorn pydantic requests
 RUN pip install git+https://github.com/meta-pytorch/OpenEnv.git
 
-# Copy your specific environment files into the container
-# Use --chown=user to ensure the non-root user has permission to read the files
 COPY --chown=user ./envs/free_guy /app/envs/free_guy
 
 # Expose the Hugging Face required port
