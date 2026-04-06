@@ -1,0 +1,6 @@
+spec_version: 1
+name: freeguy-env
+type: space
+runtime: fastapi
+app: envs.free_guy.server.app:app
+port: 7860
