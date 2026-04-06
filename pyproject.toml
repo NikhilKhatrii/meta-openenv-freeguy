@@ -23,8 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-# Tells the Meta grader exactly where your FastAPI app is located
-server = "envs.free_guy.server.app:app"
+server = "server.app:main"
 
 [tool.setuptools.packages.find]
 # Automatically finds your 'envs' folder so you don't have to map it manually
