@@ -5,7 +5,8 @@ pydantic
 requests
 git+https://github.com/meta-pytorch/OpenEnv.git
 
-# Baseline Training
+# Baseline Training & Inference
 gymnasium
 stable-baselines3[extra]
 numpy
+openai
