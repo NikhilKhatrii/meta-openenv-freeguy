@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-freeguy"
+version = "0.1.0"
+description = "Free Guy life simulator environment for OpenEnv"
+requires-python = ">=3.10"
+dependencies = [
+    # Core OpenEnv runtime
+    "openenv-core[core]>=0.2.2",
+    
+    # Environment & Training Dependencies
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "requests",
+    "numpy",
+    "gymnasium",
+    "stable-baselines3[extra]",
+    "openai"
+]
+
+[project.scripts]
+# Tells the Meta grader exactly where your FastAPI app is located
+server = "envs.free_guy.server.app:app"
+
+[tool.setuptools.packages.find]
+# Automatically finds your 'envs' folder so you don't have to map it manually
+where = ["."]
+include = ["envs*"]
