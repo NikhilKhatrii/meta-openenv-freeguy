@@ -16,6 +16,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def health_check():
+    return {"status": "Free Guy Environment is Live and Running!"}
 
 @app.post("/reset")
 def reset_environment():
