@@ -1,0 +1,11 @@
+# Server & Environment
+fastapi
+uvicorn
+pydantic
+requests
+git+https://github.com/meta-pytorch/OpenEnv.git
+
+# Baseline Training
+gymnasium
+stable-baselines3[extra]
+numpy
