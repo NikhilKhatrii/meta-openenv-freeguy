@@ -3,19 +3,18 @@ from openai import OpenAI
 from envs.free_guy.client import FreeGuyEnv
 from envs.free_guy.models import FreeGuyAction
 
-# Environment Variables with specific defaults
-API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
+# LLM connection details
+LLM_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-3.5-turbo")
-HF_TOKEN = os.getenv("HF_TOKEN") # No default allowed per checklist!
+HF_TOKEN = os.getenv("HF_TOKEN")
 
-#All LLM calls use the OpenAI client
 client = OpenAI(
-    base_url=API_BASE_URL,
+    base_url=LLM_BASE_URL,
     api_key=HF_TOKEN if HF_TOKEN else "dummy_key_for_local_testing"
 )
 
 def get_llm_action(observation) -> int:
-    """Asks the LLM what to do based on the current observation."""
+    # ... (Keep your existing get_llm_action code exactly the same) ...
     prompt = f"""
     You are managing a life simulator. 
     Current Stats: Time: {observation.time_of_day}, Day: {observation.day}, Mood: {observation.mood}, Money: ${observation.money}, Energy: {observation.energy}, Sleep: {observation.sleep}.
@@ -29,35 +28,43 @@ def get_llm_action(observation) -> int:
             max_tokens=5,
             temperature=0.3
         )
-        # Extract the number from the LLM's response
         text_reply = response.choices[0].message.content.strip()
         return int(''.join(filter(str.isdigit, text_reply))[0])
     except Exception:
-        return 0 # Fallback to sleep if the LLM crashes or gives bad output
+        return 0
 
 def run_inference():
-    # Stdout logs must follow START/STEP/END exactly
     print("START")
     
-    # Connect to the local server spun up by Meta's grader
-    with FreeGuyEnv(base_url="http://localhost:8000").sync() as env:
-        result = env.reset()
-        
-        # Run one episode (Max 30 days / 720 hours)
-        for _ in range(720):
-            # Get action from LLM
-            action_id = get_llm_action(result.observation)
-            action = FreeGuyAction(action_id=action_id)
+    # --- THE CRITICAL FIX ---
+    # Meta passes the target environment URL via OPENENV_BASE_URL or API_BASE_URL.
+    # We check OPENENV_BASE_URL first, fallback to API_BASE_URL, then fallback to localhost.
+    target_url = os.getenv("OPENENV_BASE_URL", os.getenv("API_BASE_URL", "http://localhost:8000"))
+    
+    # Ensure it doesn't accidentally use the OpenAI API URL for the game environment
+    if "api.openai.com" in target_url:
+        target_url = "http://localhost:8000"
+
+    print(f"Connecting to environment at: {target_url}")
+    
+    try:
+        with FreeGuyEnv(base_url=target_url).sync() as env:
+            result = env.reset()
             
-            # Take step
-            result = env.step(action)
-            
-            # Print the exact STEP format required
-            print(f"STEP")
-            
-            if result.done:
-                break
+            for _ in range(720):
+                action_id = get_llm_action(result.observation)
+                action = FreeGuyAction(action_id=action_id)
+                result = env.step(action)
+                print(f"STEP")
                 
+                if result.done:
+                    break
+                    
+    except Exception as e:
+        print(f"Connection Error Details: {e}")
+        # Phase 2 requires fail-fast, but we want to see the error in the logs
+        raise e
+        
     print("END")
 
 if __name__ == "__main__":
