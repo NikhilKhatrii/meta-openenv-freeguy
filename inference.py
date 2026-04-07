@@ -3,7 +3,9 @@ from openai import OpenAI
 from envs.free_guy.client import FreeGuyEnv
 from envs.free_guy.models import FreeGuyAction
 
-# LLM connection details
+# ==========================================
+# 1. THE AI CONNECTION (Strictly HTTP)
+# ==========================================
 LLM_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-3.5-turbo")
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -14,7 +16,6 @@ client = OpenAI(
 )
 
 def get_llm_action(observation) -> int:
-    # ... (Keep your existing get_llm_action code exactly the same) ...
     prompt = f"""
     You are managing a life simulator. 
     Current Stats: Time: {observation.time_of_day}, Day: {observation.day}, Mood: {observation.mood}, Money: ${observation.money}, Energy: {observation.energy}, Sleep: {observation.sleep}.
@@ -33,18 +34,16 @@ def get_llm_action(observation) -> int:
     except Exception:
         return 0
 
+# ==========================================
+# 2. THE GAME CONNECTION (Strictly WebSockets)
+# ==========================================
 def run_inference():
     print("START")
     
-    # --- THE CRITICAL FIX ---
-    # Meta passes the target environment URL via OPENENV_BASE_URL or API_BASE_URL.
-    # We check OPENENV_BASE_URL first, fallback to API_BASE_URL, then fallback to localhost.
-    target_url = os.getenv("OPENENV_BASE_URL", os.getenv("API_BASE_URL", "http://localhost:8000"))
+    # We strictly isolate the environment URL. 
+    # If the grader doesn't provide it, we default to the port we defined in openenv.yaml (7860)
+    target_url = os.getenv("OPENENV_BASE_URL", "http://localhost:7860")
     
-    # Ensure it doesn't accidentally use the OpenAI API URL for the game environment
-    if "api.openai.com" in target_url:
-        target_url = "http://localhost:8000"
-
     print(f"Connecting to environment at: {target_url}")
     
     try:
@@ -62,7 +61,6 @@ def run_inference():
                     
     except Exception as e:
         print(f"Connection Error Details: {e}")
-        # Phase 2 requires fail-fast, but we want to see the error in the logs
         raise e
         
     print("END")
