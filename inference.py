@@ -3,9 +3,6 @@ from openai import OpenAI
 from envs.free_guy.client import FreeGuyEnv
 from envs.free_guy.models import FreeGuyAction
 
-# ==========================================
-# 1. THE AI CONNECTION (Strictly HTTP)
-# ==========================================
 LLM_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-3.5-turbo")
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -34,36 +31,50 @@ def get_llm_action(observation) -> int:
     except Exception:
         return 0
 
-# ==========================================
-# 2. THE GAME CONNECTION (Strictly WebSockets)
-# ==========================================
 def run_inference():
-    print("START")
+    # Define a task name for the grader
+    task_name = "freeguy_survival_eval"
     
-    # We strictly isolate the environment URL. 
-    # If the grader doesn't provide it, we default to the port we defined in openenv.yaml (7860)
+    # 1. EXACT FORMAT: [START] task=NAME with flush=True
+    print(f"[START] task={task_name}", flush=True)
+    
     target_url = os.getenv("OPENENV_BASE_URL", "http://localhost:7860")
     
-    print(f"Connecting to environment at: {target_url}")
+    # Initialize variables so they exist even if it crashes
+    step_count = 0
+    total_reward = 0.0
     
     try:
         with FreeGuyEnv(base_url=target_url).sync() as env:
             result = env.reset()
             
-            for _ in range(720):
+            for step in range(1, 721): # Max 30 days
+                step_count = step
                 action_id = get_llm_action(result.observation)
                 action = FreeGuyAction(action_id=action_id)
+                
                 result = env.step(action)
-                print(f"STEP")
+                
+                # Grab reward (default to 0.0 if not found)
+                current_reward = getattr(result.observation, 'reward', 0.0)
+                total_reward += current_reward
+                
+                # 2. EXACT FORMAT: [STEP] step=N reward=R with flush=True
+                print(f"[STEP] step={step_count} reward={current_reward}", flush=True)
                 
                 if result.done:
                     break
                     
+            # Create a simple score (1.0 if they survived all 720 hours)
+            final_score = step_count / 720.0
+            
+            # 3. EXACT FORMAT: [END] task=NAME score=S steps=N with flush=True
+            print(f"[END] task={task_name} score={final_score:.2f} steps={step_count}", flush=True)
+            
     except Exception as e:
-        print(f"Connection Error Details: {e}")
+        # If it crashes mid-game, we MUST still print [END] so the grader doesn't freeze
+        print(f"[END] task={task_name} score=0.0 steps={step_count}", flush=True)
         raise e
-        
-    print("END")
 
 if __name__ == "__main__":
     run_inference()
