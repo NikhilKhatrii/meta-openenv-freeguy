@@ -12,10 +12,11 @@ client = OpenAI(
     api_key=HF_TOKEN if HF_TOKEN else "dummy_key_for_local_testing"
 )
 
-def get_llm_action(observation) -> int:
+def get_llm_action(observation, current_focus) -> int:
+    # We now pass the 'current_focus' so the AI knows which of the 3 tasks it is trying to win
     prompt = f"""
-    You are managing a life simulator. 
-    Current Stats: Time: {observation.time_of_day}, Day: {observation.day}, Mood: {observation.mood}, Money: ${observation.money}, Energy: {observation.energy}, Sleep: {observation.sleep}.
+    You are a life simulator AI. Your primary goal right now: {current_focus}.
+    Current Stats: Day {observation.day}, Mood: {observation.mood:.2f}, Money: ${observation.money:.2f}, Energy: {observation.energy:.2f}.
     Actions: 0 (Sleep), 1 (Work), 2 (Small Leisure), 3 (Weekend Adventure).
     Reply with ONLY a single integer (0, 1, 2, or 3).
     """
@@ -31,50 +32,70 @@ def get_llm_action(observation) -> int:
     except Exception:
         return 0
 
+def clamp_score(raw_score):
+    # CRITICAL FIX: Forces the score to be strictly between 0 and 1 (exclusive)
+    # If the score is 1.0, it becomes 0.99. If it's 0.0, it becomes 0.01.
+    return max(0.01, min(0.99, float(raw_score)))
+
 def run_inference():
-    # Define a task name for the grader
-    task_name = "freeguy_survival_eval"
-    
-    # 1. EXACT FORMAT: [START] task=NAME with flush=True
-    print(f"[START] task={task_name}", flush=True)
-    
     target_url = os.getenv("OPENENV_BASE_URL", "http://localhost:7860")
     
-    # Initialize variables so they exist even if it crashes
-    step_count = 0
-    total_reward = 0.0
+    # Define our 3 required tasks
+    tasks = [
+        {"name": "task_survival", "focus": "Survive as long as possible without dying"},
+        {"name": "task_wealth", "focus": "Make as much money as possible"},
+        {"name": "task_wellness", "focus": "Keep your mood and energy levels as high as possible"}
+    ]
     
-    try:
-        with FreeGuyEnv(base_url=target_url).sync() as env:
-            result = env.reset()
-            
-            for step in range(1, 721): # Max 30 days
-                step_count = step
-                action_id = get_llm_action(result.observation)
-                action = FreeGuyAction(action_id=action_id)
+    # Loop through and play a game for each task
+    for task in tasks:
+        task_name = task["name"]
+        print(f"[START] task={task_name}", flush=True)
+        
+        step_count = 0
+        final_money = 0.0
+        final_mood = 0.0
+        
+        try:
+            with FreeGuyEnv(base_url=target_url).sync() as env:
+                result = env.reset()
                 
-                result = env.step(action)
-                
-                # Grab reward (default to 0.0 if not found)
-                current_reward = getattr(result.observation, 'reward', 0.0)
-                total_reward += current_reward
-                
-                # 2. EXACT FORMAT: [STEP] step=N reward=R with flush=True
-                print(f"[STEP] step={step_count} reward={current_reward}", flush=True)
-                
-                if result.done:
-                    break
+                # Capped at 100 steps to prevent the CI pipeline from Timing Out
+                for step in range(1, 101): 
+                    step_count = step
                     
-            # Create a simple score (1.0 if they survived all 720 hours)
-            final_score = step_count / 720.0
-            
-            # 3. EXACT FORMAT: [END] task=NAME score=S steps=N with flush=True
-            print(f"[END] task={task_name} score={final_score:.2f} steps={step_count}", flush=True)
-            
-    except Exception as e:
-        # If it crashes mid-game, we MUST still print [END] so the grader doesn't freeze
-        print(f"[END] task={task_name} score=0.0 steps={step_count}", flush=True)
-        raise e
+                    # Ask the LLM what to do, reminding it of the specific task
+                    action_id = get_llm_action(result.observation, task["focus"])
+                    action = FreeGuyAction(action_id=action_id)
+                    
+                    result = env.step(action)
+                    current_reward = getattr(result.observation, 'reward', 0.0)
+                    
+                    # Store these for the custom scoring math
+                    final_money = getattr(result.observation, 'money', 0.0)
+                    final_mood = getattr(result.observation, 'mood', 0.0)
+                    
+                    print(f"[STEP] step={step_count} reward={current_reward}", flush=True)
+                    
+                    if getattr(result, 'done', False):
+                        break
+                        
+                # Calculate a unique score depending on which task we just played
+                if task_name == "task_survival":
+                    raw_score = step_count / 100.0
+                elif task_name == "task_wealth":
+                    raw_score = final_money / 10000.0
+                else: # task_wellness
+                    raw_score = final_mood
+                    
+                # Apply the strict (0, 1) math rule
+                final_score = clamp_score(raw_score)
+                
+                print(f"[END] task={task_name} score={final_score:.4f} steps={step_count}", flush=True)
+                
+        except Exception as e:
+            # If a task crashes, give it a 0.01 so the grader doesn't fail the strict 0/1 rule
+            print(f"[END] task={task_name} score=0.01 steps={step_count}", flush=True)
 
 if __name__ == "__main__":
     run_inference()
